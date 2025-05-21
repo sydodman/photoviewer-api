@@ -33,12 +33,31 @@ const S3_BASE = `https://${process.env.S3_BUCKET}.s3.eu-west-1.amazonaws.com`;
 // Convert a photo key to a stable numeric ID for Qdrant
 function keyToId(key) {
   // For real Qdrant implementation, we need to use the actual ID format used in Qdrant
-  // This implementation assumes Qdrant is using a numeric hash of the key
-  // We'll first try to search by key in the payload
-  return key;
+  // This is the same hash function used in the Python notebook
+  const crypto = require('crypto');
+  const sha1 = crypto.createHash('sha1').update(key).digest('hex');
+  const id = BigInt('0x' + sha1) % BigInt(10**18);
+  return Number(id);
+}
+
+// Get the photo item from DynamoDB
+async function getPhotoItem(key) {
+  try {
+    // Get the item from DynamoDB
+    const getItemResponse = await ddb.send(new GetCommand({
+      TableName: process.env.TABLE_NAME,
+      Key: { Key: key }
+    }));
+    
+    return getItemResponse.Item;
+  } catch (error) {
+    console.error(`Error getting item for key ${key}:`, error);
+    return null;
+  }
 }
 
 exports.handler = async (event) => {
+  const startTime = Date.now();
   console.log('getSimilarPhotos invoked with raw event:', JSON.stringify(event));
 
   try {
@@ -59,13 +78,8 @@ exports.handler = async (event) => {
     const limit = parseInt(params.limit) || 20;
     const threshold = parseFloat(params.threshold) || 0.75; // Higher = more similar
     
-    // 1. First, get the photo from DynamoDB to verify it exists
-    const getItemResponse = await ddb.send(new GetCommand({
-      TableName: process.env.TABLE_NAME,
-      Key: { Key: photoId }
-    }));
-    
-    const photoItem = getItemResponse.Item;
+    // 1. Get the photo from DynamoDB to verify it exists
+    const photoItem = await getPhotoItem(photoId);
     if (!photoItem) {
       return {
         statusCode: 404,
@@ -74,9 +88,7 @@ exports.handler = async (event) => {
       };
     }
     
-    // 2. Search for similar photos in Qdrant
-    const pointId = keyToId(photoId);
-    console.log(`Generated point ID: ${pointId} for photo: ${photoId}`);
+    console.log(`Retrieved photo item for: ${photoId}`);
     
     let searchResults = [];
     
@@ -139,32 +151,41 @@ exports.handler = async (event) => {
         
         console.log(`Searching for vector with key: ${photoId}`);
         
-        // First, search for the point by key in the payload
-        // We'll use a more direct filter to improve performance
-        const searchByKeyResponse = await axios.post(
-          `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/scroll`,
-          {
-            filter: {
-              must: [
-                {
-                  key: "Key",
-                  match: {
-                    value: photoId
+        // If we have a vectorId, get the point directly by ID
+        // Otherwise, fall back to searching by key in the payload
+        let searchByKeyResponse;
+        
+        // Use optimized key-based search
+        console.log(`Using optimized key-based search for: ${photoId}`);
+        const searchStartTime = Date.now();
+          // Use exact match filter for better performance
+          searchByKeyResponse = await axios.post(
+            `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/scroll`,
+            {
+              filter: {
+                must: [
+                  {
+                    key: "Key",
+                    match: {
+                      value: photoId
+                    }
                   }
-                }
-              ]
+                ]
+              },
+              limit: 1,
+              with_vector: true,
+              with_payload: false  // We don't need the payload for the search
             },
-            limit: 1,
-            with_vector: true,
-            with_payload: true
-          },
-          { 
-            timeout: QDRANT_TIMEOUT_MS,
-            headers: {
-              'Content-Type': 'application/json'
+            { 
+              timeout: QDRANT_TIMEOUT_MS,
+              headers: {
+                'Content-Type': 'application/json'
+              }
             }
-          }
-        );
+          );
+          
+          const searchTime = Date.now() - searchStartTime;
+          console.log(`Optimized key-based search took ${searchTime}ms`);
         
         console.log(`Received response from Qdrant scroll endpoint. Status: ${searchByKeyResponse.status}`);
         if (searchByKeyResponse.data && searchByKeyResponse.data.status === 'ok') {
@@ -337,6 +358,9 @@ exports.handler = async (event) => {
     if (!useMockMode && similarPhotos.length === 0) {
       console.log('No similar photos found after filtering. Raw results:', JSON.stringify(searchResults));
     }
+    
+    const totalTime = Date.now() - startTime;
+    console.log(`Total execution time: ${totalTime}ms`);
     
     return {
       statusCode: 200,
