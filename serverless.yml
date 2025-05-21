@@ -9,11 +9,16 @@ provider:
     - Effect: Allow
       Action:
         - dynamodb:Scan
+        - dynamodb:GetItem
       Resource:
         - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoViewer
 
   environment:
     TABLE_NAME: photoViewer
+    QDRANT_HOST: '3.255.247.148'
+    QDRANT_PORT: 6333
+    COLLECTION_NAME: 'photo_embeddings'
+    S3_BUCKET: 'trackphotos-eu-west-1'
 
 functions:
   getFilters:
@@ -29,6 +34,16 @@ functions:
     events:
       - http:
           path: photos
+          method: get
+          cors: true
+          
+  getSimilarPhotos:
+    handler: handlers/getSimilarPhotos.handler
+    timeout: 30
+    memorySize: 1024
+    events:
+      - http:
+          path: similar
           method: get
           cors: true
 

@@ -1,6 +1,6 @@
 {
   "name": "photo-viewer-api",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -9,10 +9,14 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "PhotoViewer API with Qdrant vector search integration for finding similar photos",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.803.0",
-    "@aws-sdk/util-dynamodb": "^3.803.0"
+    "@aws-sdk/client-s3": "^3.803.0",
+    "@aws-sdk/lib-dynamodb": "^3.803.0",
+    "@aws-sdk/util-dynamodb": "^3.803.0",
+    "axios": "^1.6.2",
+    "qdrant-client": "^0.0.1"
   },
   "devDependencies": {
     "serverless-offline": "^14.4.0"

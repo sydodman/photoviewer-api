@@ -1,0 +1,21 @@
+# Dependency directories
+node_modules/
+
+# Serverless directories
+.serverless/
+
+# Environment variables
+.env
+
+# Build files
+.build/
+dist/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS specific files
+.DS_Store
+Thumbs.db
