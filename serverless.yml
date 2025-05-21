@@ -1,0 +1,36 @@
+service: photo-viewer-api
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: eu-west-1
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Scan
+      Resource:
+        - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoViewer
+
+  environment:
+    TABLE_NAME: photoViewer
+
+functions:
+  getFilters:
+    handler: handlers/getFilters.handler
+    events:
+      - http:
+          path: filters
+          method: get
+          cors: true
+
+  getPhotos:
+    handler: handlers/getPhotos.handler
+    events:
+      - http:
+          path: photos
+          method: get
+          cors: true
+
+plugins:
+  - serverless-offline
