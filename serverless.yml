@@ -12,9 +12,11 @@ provider:
         - dynamodb:GetItem
       Resource:
         - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoViewer
+        - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoVectors
 
   environment:
     TABLE_NAME: photoViewer
+    VECTOR_TABLE_NAME: photoVectors
     QDRANT_HOST: '3.255.247.148'
     QDRANT_PORT: 6333
     COLLECTION_NAME: 'photo_embeddings'

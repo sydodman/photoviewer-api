@@ -14,8 +14,6 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 const S3_BASE = 'https://trackphotos-eu-west-1.s3.eu-west-1.amazonaws.com';
 
 exports.handler = async (event) => {
-  console.log('getPhotos invoked with raw event:', JSON.stringify(event));
-
   try {
     // Parse query params (v2 HTTP API vs v1 REST)
     const raw = event.multiValueQueryStringParameters

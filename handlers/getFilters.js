@@ -13,8 +13,6 @@ const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 });
 
 exports.handler = async (event) => {
-  console.log('getFilters raw event:', JSON.stringify(event));
-
   try {
     // 1) Parse query params (HTTP API v2 uses .queryStringParameters; REST & multiValue v1 use .multiValueQueryStringParameters)
     const raw = event.multiValueQueryStringParameters
@@ -24,7 +22,7 @@ exports.handler = async (event) => {
          }, {})
       || {};
 
-    console.log('Parsed filters:', raw);
+
 
     // 2) Build FilterExpression if any filters passed
     let FilterExpression, ExpressionAttributeNames, ExpressionAttributeValues;
@@ -45,13 +43,14 @@ exports.handler = async (event) => {
       FilterExpression = clauses.join(' AND ');
     }
 
-    // 3) Scan the table
+        // 3) Scan the table
     const params = { TableName: process.env.TABLE_NAME };
     if (FilterExpression) {
       params.FilterExpression            = FilterExpression;
       params.ExpressionAttributeNames    = ExpressionAttributeNames;
       params.ExpressionAttributeValues   = ExpressionAttributeValues;
     }
+    
     const resp = await ddbDocClient.send(new ScanCommand(params));
     const items = resp.Items || [];
 

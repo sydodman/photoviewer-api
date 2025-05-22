@@ -16,19 +16,19 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 
 // Qdrant API base URL
 const QDRANT_BASE_URL = `http://${process.env.QDRANT_HOST}:${process.env.QDRANT_PORT}`;
-console.log(`Qdrant API URL: ${QDRANT_BASE_URL}`);
-
-// For testing/development purposes
-const MOCK_MODE = false; // Set to false when Qdrant is properly configured
 
 // Fallback to mock mode if Qdrant is unreachable
-let useMockMode = MOCK_MODE;
+let useMockMode = false;
 
 // Set timeout for Qdrant requests
 const QDRANT_TIMEOUT_MS = 10000; // 10 seconds timeout
 
 // S3 base URL for thumbnails and hi-res images
 const S3_BASE = `https://${process.env.S3_BUCKET}.s3.eu-west-1.amazonaws.com`;
+
+// Vector table name - separate table for faster vector lookups
+const VECTOR_TABLE_NAME = process.env.VECTOR_TABLE_NAME || 'photoVectors';
+const VECTOR_FIELD = 'Vector';
 
 // Convert a photo key to a stable numeric ID for Qdrant
 function keyToId(key) {
@@ -56,9 +56,29 @@ async function getPhotoItem(key) {
   }
 }
 
+// Get the vector for a photo from the vector table
+async function getPhotoVector(key) {
+  try {
+    // Get the vector from the vector table
+    const getItemResponse = await ddb.send(new GetCommand({
+      TableName: VECTOR_TABLE_NAME,
+      Key: { PhotoKey: key }
+    }));
+    
+    if (!getItemResponse.Item) {
+      console.log(`No vector found in vector table for key: ${key}`);
+      return null;
+    }
+    
+    return getItemResponse.Item[VECTOR_FIELD];
+  } catch (error) {
+    console.error(`Error getting vector for key ${key}:`, error);
+    return null;
+  }
+}
+
 exports.handler = async (event) => {
-  const startTime = Date.now();
-  console.log('getSimilarPhotos invoked with raw event:', JSON.stringify(event));
+  console.log('getSimilarPhotos invoked');
 
   try {
     // Parse query parameters
@@ -88,12 +108,7 @@ exports.handler = async (event) => {
       };
     }
     
-    console.log(`Retrieved photo item for: ${photoId}`);
-    
     let searchResults = [];
-    
-    // Check if we need to use mock mode
-    useMockMode = MOCK_MODE;
     
     // If not in mock mode, check if Qdrant is accessible
     if (!useMockMode) {
@@ -147,94 +162,79 @@ exports.handler = async (event) => {
     } else {
       // Real Qdrant implementation
       try {
-        console.log(`Searching for photos similar to: ${photoId}`);
-        
-        console.log(`Searching for vector with key: ${photoId}`);
-        
-        // If we have a vectorId, get the point directly by ID
-        // Otherwise, fall back to searching by key in the payload
-        let searchByKeyResponse;
-        
-        // Use optimized key-based search
-        console.log(`Using optimized key-based search for: ${photoId}`);
-        const searchStartTime = Date.now();
-          // Use exact match filter for better performance
-          searchByKeyResponse = await axios.post(
-            `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/scroll`,
-            {
-              filter: {
-                must: [
-                  {
-                    key: "Key",
-                    match: {
-                      value: photoId
-                    }
-                  }
-                ]
-              },
-              limit: 1,
-              with_vector: true,
-              with_payload: false  // We don't need the payload for the search
-            },
-            { 
-              timeout: QDRANT_TIMEOUT_MS,
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-          
-          const searchTime = Date.now() - searchStartTime;
-          console.log(`Optimized key-based search took ${searchTime}ms`);
-        
-        console.log(`Received response from Qdrant scroll endpoint. Status: ${searchByKeyResponse.status}`);
-        if (searchByKeyResponse.data && searchByKeyResponse.data.status === 'ok') {
-          console.log('Qdrant response status is OK');
-        }
-        
-        if (!searchByKeyResponse.data || !searchByKeyResponse.data.result || 
-            !searchByKeyResponse.data.result.points || searchByKeyResponse.data.result.points.length === 0) {
-          console.error('Vector not found for photo:', photoId);
-          console.log('Falling back to mock mode due to missing vector');
-          
-          // Fall back to mock mode
-          useMockMode = true;
-          
-          // Re-run the function with mock mode
-          const scanParams = {
-            TableName: process.env.TABLE_NAME,
-            FilterExpression: '#team = :team',
-            ExpressionAttributeNames: {
-              '#team': 'Team'
-            },
-            ExpressionAttributeValues: {
-              ':team': photoItem.Team
-            },
-            Limit: limit + 1
-          };
-          
-          const scanResponse = await ddb.send(new ScanCommand(scanParams));
-          searchResults = scanResponse.Items.map(item => ({
-            id: keyToId(item.Key) !== keyToId(photoId) ? keyToId(item.Key) : keyToId(photoId) + 1,
-            score: Math.random() * 0.5 + 0.5,
-            payload: item
-          }));
-          
-          console.log(`Found ${searchResults.length} mock similar photos with Team=${photoItem.Team}`);
-          return;
-        }
-        
-        const point = searchByKeyResponse.data.result.points[0];
-        console.log(`Found point with ID: ${point.id} for photo: ${photoId}`);
-        
-        // Extract the vector from the point
-        const vector = point.vector;
+        // Get the vector from the DynamoDB vector table (much faster than Qdrant lookup)
+        const vector = await getPhotoVector(photoId);
         
         if (!vector) {
-          console.error('Vector data missing for point:', point.id);
-          console.log('Falling back to mock mode due to missing vector data');
+          // Fall back to Qdrant lookup if vector not in DynamoDB
+          try {
+            // Use optimized key-based search
+            const searchByKeyResponse = await axios.post(
+              `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/scroll`,
+              {
+                filter: {
+                  must: [
+                    {
+                      key: "Key",
+                      match: {
+                        value: photoId
+                      }
+                    }
+                  ]
+                },
+                limit: 1,
+                with_vector: true,
+                with_payload: false  // We don't need the payload for the search
+              },
+              { 
+                timeout: QDRANT_TIMEOUT_MS,
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            if (searchByKeyResponse.data && 
+                searchByKeyResponse.data.result && 
+                searchByKeyResponse.data.result.points && 
+                searchByKeyResponse.data.result.points.length > 0 && 
+                searchByKeyResponse.data.result.points[0].vector) {
+              
+              const point = searchByKeyResponse.data.result.points[0];
+              
+              // Use the vector from Qdrant
+              const qdrantVector = point.vector;
+              
+              // Continue with the Qdrant vector
+              if (qdrantVector && qdrantVector.length > 0) {
+                // Now search for similar vectors using the Qdrant vector
+                const searchResponse = await axios.post(
+                  `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/search`,
+                  {
+                    vector: qdrantVector,
+                    limit: limit + 5, // Request a few extra to account for filtering
+                    score_threshold: threshold,
+                    with_payload: true
+                  },
+                  { 
+                    timeout: QDRANT_TIMEOUT_MS,
+                    headers: {
+                      'Content-Type': 'application/json'
+                    }
+                  }
+                );
+                
+                if (searchResponse.data && searchResponse.data.status === 'ok') {
+                  searchResults = searchResponse.data.result || [];
+                  return;
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error in Qdrant fallback:', error.message);
+          }
           
-          // Fall back to mock mode
+          // If we get here, both vector table and Qdrant fallback failed
           useMockMode = true;
           
           // Re-run the function with mock mode
@@ -257,12 +257,10 @@ exports.handler = async (event) => {
             payload: item
           }));
           
-          console.log(`Found ${searchResults.length} mock similar photos with Team=${photoItem.Team}`);
           return;
         }
         
-        // Now search for similar vectors
-        console.log(`Searching for similar vectors with threshold: ${threshold} and limit: ${limit}`);
+        // Now search for similar vectors using the vector from DynamoDB
         const searchResponse = await axios.post(
           `${QDRANT_BASE_URL}/collections/${process.env.COLLECTION_NAME}/points/search`,
           {
@@ -279,18 +277,8 @@ exports.handler = async (event) => {
           }
         );
         
-        console.log(`Received response from Qdrant search endpoint. Status: ${searchResponse.status}`);
-        
         if (searchResponse.data && searchResponse.data.status === 'ok') {
           searchResults = searchResponse.data.result || [];
-          console.log(`Found ${searchResults.length} similar photos from Qdrant`);
-          
-          // Log a sample of the results for debugging
-          if (searchResults.length > 0) {
-            const sampleResult = searchResults[0];
-            console.log(`Sample result - ID: ${sampleResult.id}, Score: ${sampleResult.score}`);
-            console.log(`Sample payload keys: ${Object.keys(sampleResult.payload || {}).join(', ')}`);
-          }
         } else {
           console.error('Qdrant search response error:', searchResponse.data);
           throw new Error('Invalid response from Qdrant search');
@@ -358,10 +346,6 @@ exports.handler = async (event) => {
     if (!useMockMode && similarPhotos.length === 0) {
       console.log('No similar photos found after filtering. Raw results:', JSON.stringify(searchResults));
     }
-    
-    const totalTime = Date.now() - startTime;
-    console.log(`Total execution time: ${totalTime}ms`);
-    
     return {
       statusCode: 200,
       headers: { 'Access-Control-Allow-Origin': '*' },

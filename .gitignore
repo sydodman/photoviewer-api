@@ -19,3 +19,8 @@ npm-debug.log*
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Temporary files and directories
+temp/
+*.tmp
+response.json
