@@ -13,10 +13,16 @@ provider:
       Resource:
         - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoViewer
         - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/photoVectors
+    - Effect: Allow
+      Action:
+        - dynamodb:Query # Specific permission for getFilters to query the new table
+      Resource:
+        - arn:aws:dynamodb:eu-west-1:${aws:accountId}:table/PhotoViewerFilters
 
   environment:
     TABLE_NAME: photoViewer
     VECTOR_TABLE_NAME: photoVectors
+    FILTERS_TABLE_NAME: PhotoViewerFilters # Added for the new filters table
     QDRANT_HOST: '3.255.247.148'
     QDRANT_PORT: 6333
     COLLECTION_NAME: 'photo_embeddings'

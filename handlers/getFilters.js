@@ -2,114 +2,113 @@
 'use strict';
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const {
-  DynamoDBDocumentClient,
-  ScanCommand
-} = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, QueryCommand } = require('@aws-sdk/lib-dynamodb'); // QueryCommand added
 
-// Create a DocumentClient that marshals/unmarshals JS types for you
-const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-  marshallOptions: { removeUndefinedValues: true },
-});
+const client = new DynamoDBClient({});
+const ddbDocClient = DynamoDBDocumentClient.from(client);
+
+// Define the filter groups in order of hierarchy
+// const FILTER_GROUPS_HIERARCHY = ['Year', 'Event', 'Day', 'Team', 'Misc']; // Not directly used in query logic but good for reference
+const FILTERS_TABLE_NAME = process.env.FILTERS_TABLE_NAME || 'PhotoViewerFilters'; // Get from env or default
+
+async function queryFilters(parentPath, filterTypePrefix) {
+  const params = {
+    TableName: FILTERS_TABLE_NAME,
+    KeyConditionExpression: 'ParentPath = :pp AND begins_with(SK, :sk_prefix)',
+    ExpressionAttributeValues: {
+      ':pp': parentPath,
+      ':sk_prefix': filterTypePrefix,
+    },
+    ProjectionExpression: 'ActualFilterValue, PhotoCount', // Only fetch needed attributes
+  };
+
+  try {
+    const command = new QueryCommand(params);
+    const response = await ddbDocClient.send(command);
+    // Filter out items with PhotoCount <= 0, as they shouldn't be selectable
+    return (response.Items || []).filter(item => item.PhotoCount > 0).map(item => item.ActualFilterValue).sort();
+  } catch (error) {
+    console.error(`Error querying PhotoViewerFilters for ParentPath '${parentPath}' and SK prefix '${filterTypePrefix}':`, error);
+    return []; // Return empty array on error to prevent breaking the entire filter chain
+  }
+}
 
 exports.handler = async (event) => {
-  try {
-    // 1) Parse query params (HTTP API v2 uses .queryStringParameters; REST & multiValue v1 use .multiValueQueryStringParameters)
-    const raw = event.multiValueQueryStringParameters
-      || Object.entries(event.queryStringParameters || {}).reduce((acc, [k, v]) => {
-           acc[k] = v == null ? [] : Array.isArray(v) ? v : [v];
-           return acc;
-         }, {})
-      || {};
+  console.log('getFilters event:', JSON.stringify(event, null, 2));
 
+  const filters = {
+    Year: [],
+    Event: [],
+    Day: [],
+    Team: [],
+    Misc: [],
+  };
 
+  const selectedYear = event.queryStringParameters?.year || event.queryStringParameters?.Year;
+  const selectedEvent = event.queryStringParameters?.event || event.queryStringParameters?.Event;
+  const selectedDay = event.queryStringParameters?.day || event.queryStringParameters?.Day;
 
-    // 2) Build FilterExpression if any filters passed
-    let FilterExpression, ExpressionAttributeNames, ExpressionAttributeValues;
-    if (Object.keys(raw).length) {
-      ExpressionAttributeNames   = {};
-      ExpressionAttributeValues  = {};
-      const clauses = [];
+  const promisesToResolve = {
+    yearPromise: queryFilters('ROOT', 'YEAR#'),
+    eventPromise: Promise.resolve([]), // Default to empty if not selected
+    dayPromise: Promise.resolve([]),   // Default to empty
+    teamPromise: Promise.resolve([]),  // Default to empty
+    miscPromise: Promise.resolve([])   // Default to empty
+  };
 
-      for (const [key, vals] of Object.entries(raw)) {
-        ExpressionAttributeNames[`#${key}`] = key;
-        const placeholders = vals.map((v, i) => {
-          const ph = `:${key}${i}`;
-          ExpressionAttributeValues[ph] = v;
-          return ph;
-        });
-        clauses.push(`#${key} IN (${placeholders.join(',')})`);
-      }
-      FilterExpression = clauses.join(' AND ');
-    }
-
-    // 3) Scan the table with pagination
-    const params = { TableName: process.env.TABLE_NAME };
-    if (FilterExpression) {
-      params.FilterExpression            = FilterExpression;
-      params.ExpressionAttributeNames    = ExpressionAttributeNames;
-      params.ExpressionAttributeValues   = ExpressionAttributeValues;
-    }
-    
-    // First, do the standard scan to maintain backward compatibility
-    const resp = await ddbDocClient.send(new ScanCommand(params));
-    let items = resp.Items || [];
-    
-    // Check if we need to paginate (if LastEvaluatedKey exists)
-    if (resp.LastEvaluatedKey) {
-      console.log(`Initial scan returned ${items.length} items with more available. Starting pagination...`);
-      
-      // Continue paginating as long as we have a LastEvaluatedKey
-      let lastKey = resp.LastEvaluatedKey;
-      
-      // Only do a maximum of 3 additional pages to avoid timeouts
-      for (let i = 0; i < 3 && lastKey; i++) {
-        // Create a new params object with the ExclusiveStartKey
-        const paginationParams = Object.assign({}, params, { ExclusiveStartKey: lastKey });
-        
-        try {
-          const pageResp = await ddbDocClient.send(new ScanCommand(paginationParams));
-          console.log(`Retrieved page ${i+1} with ${pageResp.Items ? pageResp.Items.length : 0} additional items`);
-          
-          // Add the new items to our collection
-          if (pageResp.Items && pageResp.Items.length > 0) {
-            items = items.concat(pageResp.Items);
-          }
-          
-          // Update the pagination key for the next iteration
-          lastKey = pageResp.LastEvaluatedKey;
-        } catch (paginationError) {
-          console.error(`Error during pagination (page ${i+1}):`, paginationError);
-          break; // Stop pagination on error, but keep the items we've already retrieved
-        }
-      }
-      
-      console.log(`Pagination complete. Total items: ${items.length}`);
-    }
-
-    // 4) Pull out distinct values for each group
-    const groups = ['Year','Event','Day','Team','Misc'];
-    const filters = {};
-    for (const g of groups) {
-      filters[g] = Array.from(
-        new Set(items.map(x => x[g]).filter(v => v != null && v !== ''))
-      ).sort();
-    }
-    
-    console.log('Computed filters:', filters);
-
-    return {
-      statusCode: 200,
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(filters),
-    };
-
-  } catch (err) {
-    console.error('getFilters error:', err);
-    return {
-      statusCode: 500,
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ message: 'Internal server error' }),
-    };
+  if (selectedYear) {
+    const eventParentPath = `YEAR#${selectedYear}`;
+    promisesToResolve.eventPromise = queryFilters(eventParentPath, 'EVENT#');
   }
+
+  if (selectedYear && selectedEvent) {
+    const dayParentPath = `YEAR#${selectedYear}#EVENT#${selectedEvent}`;
+    promisesToResolve.dayPromise = queryFilters(dayParentPath, 'DAY#');
+  }
+
+  if (selectedYear && selectedEvent && selectedDay) {
+    const teamMiscParentPath = `YEAR#${selectedYear}#EVENT#${selectedEvent}#DAY#${selectedDay}`;
+    promisesToResolve.teamPromise = queryFilters(teamMiscParentPath, 'TEAM#');
+    promisesToResolve.miscPromise = queryFilters(teamMiscParentPath, 'MISC#');
+  }
+
+  try {
+    const [yearData, eventData, dayData, teamData, miscData] = await Promise.all([
+      promisesToResolve.yearPromise,
+      promisesToResolve.eventPromise,
+      promisesToResolve.dayPromise,
+      promisesToResolve.teamPromise,
+      promisesToResolve.miscPromise
+    ]);
+
+    filters.Year = yearData;
+    filters.Event = eventData;
+    filters.Day = dayData;
+    filters.Team = teamData;
+    filters.Misc = miscData;
+
+  } catch (error) {
+    console.error('Error resolving filter queries:', error);
+    // If any query fails, this will catch it. Depending on requirements,
+    // you might want to return a 500 error or partial data.
+    // For now, it will proceed with potentially empty arrays for failed queries (as queryFilters returns [] on error).
+  }
+
+  // Ensure all filter arrays are sorted (though queryFilters already sorts them, this is a safeguard)
+  for (const key in filters) {
+    if (Array.isArray(filters[key])) {
+      filters[key].sort((a, b) => String(a).localeCompare(String(b))); // Ensure consistent sorting
+    }
+  }
+
+  console.log('Returning filters:', JSON.stringify(filters, null, 2));
+
+  return {
+    statusCode: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': true, // If you use cookies or auth headers
+    },
+    body: JSON.stringify(filters),
+  };
 };
