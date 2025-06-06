@@ -33,6 +33,27 @@ async function queryFilters(parentPath, filterTypePrefix) {
   }
 }
 
+const getQueryParamAsArray = (event, paramName) => {
+  const lowerParam = paramName.toLowerCase();
+  const titleParam = paramName.charAt(0).toUpperCase() + paramName.slice(1).toLowerCase();
+  let values = [];
+
+  if (event.multiValueQueryStringParameters) {
+    if (event.multiValueQueryStringParameters[lowerParam]) {
+      values = event.multiValueQueryStringParameters[lowerParam];
+    } else if (event.multiValueQueryStringParameters[titleParam]) {
+      values = event.multiValueQueryStringParameters[titleParam];
+    }
+  } else if (event.queryStringParameters) {
+    if (event.queryStringParameters[lowerParam]) {
+      values = [event.queryStringParameters[lowerParam]];
+    } else if (event.queryStringParameters[titleParam]) {
+      values = [event.queryStringParameters[titleParam]];
+    }
+  }
+  return values.filter(v => v !== null && v !== undefined && v !== ''); // Filter out empty/null values
+};
+
 exports.handler = async (event) => {
   console.log('getFilters event:', JSON.stringify(event, null, 2));
 
@@ -44,9 +65,9 @@ exports.handler = async (event) => {
     Misc: [],
   };
 
-  const selectedYear = event.queryStringParameters?.year || event.queryStringParameters?.Year;
-  const selectedEvent = event.queryStringParameters?.event || event.queryStringParameters?.Event;
-  const selectedDay = event.queryStringParameters?.day || event.queryStringParameters?.Day;
+  const selectedYears = getQueryParamAsArray(event, 'year');
+  const selectedEvents = getQueryParamAsArray(event, 'event');
+  const selectedDays = getQueryParamAsArray(event, 'day');
 
   const promisesToResolve = {
     yearPromise: queryFilters('ROOT', 'YEAR#'),
@@ -56,20 +77,50 @@ exports.handler = async (event) => {
     miscPromise: Promise.resolve([])   // Default to empty
   };
 
-  if (selectedYear) {
-    const eventParentPath = `YEAR#${selectedYear}`;
-    promisesToResolve.eventPromise = queryFilters(eventParentPath, 'EVENT#');
+  if (selectedYears.length > 0) {
+    const eventPromises = selectedYears.map(year => queryFilters(`YEAR#${year}`, 'EVENT#'));
+    promisesToResolve.eventPromise = Promise.all(eventPromises).then(results => 
+      [...new Set(results.flat())].sort()
+    );
+  } else {
+    promisesToResolve.eventPromise = Promise.resolve([]); // No year selected, no events
   }
 
-  if (selectedYear && selectedEvent) {
-    const dayParentPath = `YEAR#${selectedYear}#EVENT#${selectedEvent}`;
-    promisesToResolve.dayPromise = queryFilters(dayParentPath, 'DAY#');
+  if (selectedYears.length > 0 && selectedEvents.length > 0) {
+    const dayPromises = [];
+    selectedYears.forEach(year => {
+      selectedEvents.forEach(eventVal => {
+        dayPromises.push(queryFilters(`YEAR#${year}#EVENT#${eventVal}`, 'DAY#'));
+      });
+    });
+    promisesToResolve.dayPromise = Promise.all(dayPromises).then(results => 
+      [...new Set(results.flat())].sort()
+    );
+  } else {
+    promisesToResolve.dayPromise = Promise.resolve([]);
   }
 
-  if (selectedYear && selectedEvent && selectedDay) {
-    const teamMiscParentPath = `YEAR#${selectedYear}#EVENT#${selectedEvent}#DAY#${selectedDay}`;
-    promisesToResolve.teamPromise = queryFilters(teamMiscParentPath, 'TEAM#');
-    promisesToResolve.miscPromise = queryFilters(teamMiscParentPath, 'MISC#');
+  if (selectedYears.length > 0 && selectedEvents.length > 0 && selectedDays.length > 0) {
+    const teamPromises = [];
+    const miscPromises = [];
+    selectedYears.forEach(year => {
+      selectedEvents.forEach(eventVal => {
+        selectedDays.forEach(day => {
+          const parentPath = `YEAR#${year}#EVENT#${eventVal}#DAY#${day}`;
+          teamPromises.push(queryFilters(parentPath, 'TEAM#'));
+          miscPromises.push(queryFilters(parentPath, 'MISC#'));
+        });
+      });
+    });
+    promisesToResolve.teamPromise = Promise.all(teamPromises).then(results => 
+      [...new Set(results.flat())].sort()
+    );
+    promisesToResolve.miscPromise = Promise.all(miscPromises).then(results => 
+      [...new Set(results.flat())].sort()
+    );
+  } else {
+    promisesToResolve.teamPromise = Promise.resolve([]);
+    promisesToResolve.miscPromise = Promise.resolve([]);
   }
 
   try {
