@@ -12,13 +12,22 @@
         {
           "Effect": "Allow",
           "Action": [
-            "dynamodb:Scan"
+            "dynamodb:Scan",
+            "dynamodb:GetItem"
           ],
-          "Resource": "arn:aws:dynamodb:eu-west-1:284907138538:table/photoViewer"
+          "Resource": [
+            "arn:aws:dynamodb:eu-west-1:284907138538:table/photoViewer",
+            "arn:aws:dynamodb:eu-west-1:284907138538:table/photoVectors"
+          ]
         }
       ],
       "environment": {
-        "TABLE_NAME": "photoViewer"
+        "TABLE_NAME": "photoViewer",
+        "VECTOR_TABLE_NAME": "photoVectors",
+        "QDRANT_HOST": "3.255.247.148",
+        "QDRANT_PORT": "6333",
+        "COLLECTION_NAME": "photo_embeddings",
+        "S3_BUCKET": "trackphotos-eu-west-1"
       },
       "stage": "dev",
       "versionFunctions": true,
@@ -36,6 +45,12 @@
             "Type": "AWS::Logs::LogGroup",
             "Properties": {
               "LogGroupName": "/aws/lambda/photo-viewer-api-dev-getPhotos"
+            }
+          },
+          "GetSimilarPhotosLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+              "LogGroupName": "/aws/lambda/photo-viewer-api-dev-getSimilarPhotos"
             }
           },
           "IamRoleLambdaExecution": {
@@ -124,7 +139,7 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-eu-west-1-00926d14-269f",
-                "S3Key": "serverless/photo-viewer-api/dev/1746527734738-2025-05-06T10:35:34.738Z/photo-viewer-api.zip"
+                "S3Key": "serverless/photo-viewer-api/dev/1748792788357-2025-06-01T15:46:28.357Z/photo-viewer-api.zip"
               },
               "Handler": "handlers/getFilters.handler",
               "Runtime": "nodejs18.x",
@@ -133,7 +148,12 @@
               "Timeout": 6,
               "Environment": {
                 "Variables": {
-                  "TABLE_NAME": "photoViewer"
+                  "TABLE_NAME": "photoViewer",
+                  "VECTOR_TABLE_NAME": "photoVectors",
+                  "QDRANT_HOST": "3.255.247.148",
+                  "QDRANT_PORT": "6333",
+                  "COLLECTION_NAME": "photo_embeddings",
+                  "S3_BUCKET": "trackphotos-eu-west-1"
                 }
               },
               "Role": {
@@ -152,7 +172,7 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-eu-west-1-00926d14-269f",
-                "S3Key": "serverless/photo-viewer-api/dev/1746527734738-2025-05-06T10:35:34.738Z/photo-viewer-api.zip"
+                "S3Key": "serverless/photo-viewer-api/dev/1748792788357-2025-06-01T15:46:28.357Z/photo-viewer-api.zip"
               },
               "Handler": "handlers/getPhotos.handler",
               "Runtime": "nodejs18.x",
@@ -161,7 +181,12 @@
               "Timeout": 6,
               "Environment": {
                 "Variables": {
-                  "TABLE_NAME": "photoViewer"
+                  "TABLE_NAME": "photoViewer",
+                  "VECTOR_TABLE_NAME": "photoVectors",
+                  "QDRANT_HOST": "3.255.247.148",
+                  "QDRANT_PORT": "6333",
+                  "COLLECTION_NAME": "photo_embeddings",
+                  "S3_BUCKET": "trackphotos-eu-west-1"
                 }
               },
               "Role": {
@@ -175,24 +200,67 @@
               "GetPhotosLogGroup"
             ]
           },
-          "GetFiltersLambdaVersionuUTUUKsQ8KcYJAoopbtMh5jc63TYp8xQ3FFSFaJk": {
+          "GetSimilarPhotosLambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+              "Code": {
+                "S3Bucket": "serverless-framework-deployments-eu-west-1-00926d14-269f",
+                "S3Key": "serverless/photo-viewer-api/dev/1748792788357-2025-06-01T15:46:28.357Z/photo-viewer-api.zip"
+              },
+              "Handler": "handlers/getSimilarPhotos.handler",
+              "Runtime": "nodejs18.x",
+              "FunctionName": "photo-viewer-api-dev-getSimilarPhotos",
+              "MemorySize": 1024,
+              "Timeout": 30,
+              "Environment": {
+                "Variables": {
+                  "TABLE_NAME": "photoViewer",
+                  "VECTOR_TABLE_NAME": "photoVectors",
+                  "QDRANT_HOST": "3.255.247.148",
+                  "QDRANT_PORT": "6333",
+                  "COLLECTION_NAME": "photo_embeddings",
+                  "S3_BUCKET": "trackphotos-eu-west-1"
+                }
+              },
+              "Role": {
+                "Fn::GetAtt": [
+                  "IamRoleLambdaExecution",
+                  "Arn"
+                ]
+              }
+            },
+            "DependsOn": [
+              "GetSimilarPhotosLogGroup"
+            ]
+          },
+          "GetFiltersLambdaVersionsqVNHO7hSMGmocoFtkJxWu3MXAs3ak8Bke3CO2mON0": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "GetFiltersLambdaFunction"
               },
-              "CodeSha256": "5nxUJrN3PfbhzdOPQZt3oRQHezGMNqeX8HjL+JWMno4="
+              "CodeSha256": "OJYT9iFi8lVrI7c3alGFtsDGJmh68nDi8mQJ/S+rQd4="
             }
           },
-          "GetPhotosLambdaVersionYqrG2tf2vdLfycNWrguxyjAOVeHJqIK41C05k8D2tZc": {
+          "GetPhotosLambdaVersion0hLmozO8GI5WX5DJHZMvWSf2XFZgf5mmkMzqBOVfC4I": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "GetPhotosLambdaFunction"
               },
-              "CodeSha256": "5nxUJrN3PfbhzdOPQZt3oRQHezGMNqeX8HjL+JWMno4="
+              "CodeSha256": "OJYT9iFi8lVrI7c3alGFtsDGJmh68nDi8mQJ/S+rQd4="
+            }
+          },
+          "GetSimilarPhotosLambdaVersionu2Wqobbt6hPerlkYUqkZk7jZ2l52GIszWAJ6iN0": {
+            "Type": "AWS::Lambda::Version",
+            "DeletionPolicy": "Retain",
+            "Properties": {
+              "FunctionName": {
+                "Ref": "GetSimilarPhotosLambdaFunction"
+              },
+              "CodeSha256": "OJYT9iFi8lVrI7c3alGFtsDGJmh68nDi8mQJ/S+rQd4="
             }
           },
           "ApiGatewayRestApi": {
@@ -232,6 +300,21 @@
                 ]
               },
               "PathPart": "photos",
+              "RestApiId": {
+                "Ref": "ApiGatewayRestApi"
+              }
+            }
+          },
+          "ApiGatewayResourceSimilar": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+              "ParentId": {
+                "Fn::GetAtt": [
+                  "ApiGatewayRestApi",
+                  "RootResourceId"
+                ]
+              },
+              "PathPart": "similar",
               "RestApiId": {
                 "Ref": "ApiGatewayRestApi"
               }
@@ -321,6 +404,51 @@
               },
               "ResourceId": {
                 "Ref": "ApiGatewayResourcePhotos"
+              },
+              "RestApiId": {
+                "Ref": "ApiGatewayRestApi"
+              }
+            }
+          },
+          "ApiGatewayMethodSimilarOptions": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+              "AuthorizationType": "NONE",
+              "HttpMethod": "OPTIONS",
+              "MethodResponses": [
+                {
+                  "StatusCode": "200",
+                  "ResponseParameters": {
+                    "method.response.header.Access-Control-Allow-Origin": true,
+                    "method.response.header.Access-Control-Allow-Headers": true,
+                    "method.response.header.Access-Control-Allow-Methods": true
+                  },
+                  "ResponseModels": {}
+                }
+              ],
+              "RequestParameters": {},
+              "Integration": {
+                "Type": "MOCK",
+                "RequestTemplates": {
+                  "application/json": "{statusCode:200}"
+                },
+                "ContentHandling": "CONVERT_TO_TEXT",
+                "IntegrationResponses": [
+                  {
+                    "StatusCode": "200",
+                    "ResponseParameters": {
+                      "method.response.header.Access-Control-Allow-Origin": "'*'",
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'",
+                      "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,GET'"
+                    },
+                    "ResponseTemplates": {
+                      "application/json": ""
+                    }
+                  }
+                ]
+              },
+              "ResourceId": {
+                "Ref": "ApiGatewayResourceSimilar"
               },
               "RestApiId": {
                 "Ref": "ApiGatewayRestApi"
@@ -419,7 +547,53 @@
               "GetPhotosLambdaPermissionApiGateway"
             ]
           },
-          "ApiGatewayDeployment1746527727221": {
+          "ApiGatewayMethodSimilarGet": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+              "HttpMethod": "GET",
+              "RequestParameters": {},
+              "ResourceId": {
+                "Ref": "ApiGatewayResourceSimilar"
+              },
+              "RestApiId": {
+                "Ref": "ApiGatewayRestApi"
+              },
+              "ApiKeyRequired": false,
+              "AuthorizationType": "NONE",
+              "Integration": {
+                "IntegrationHttpMethod": "POST",
+                "Type": "AWS_PROXY",
+                "Uri": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":apigateway:",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      ":lambda:path/2015-03-31/functions/",
+                      {
+                        "Fn::GetAtt": [
+                          "GetSimilarPhotosLambdaFunction",
+                          "Arn"
+                        ]
+                      },
+                      "/invocations"
+                    ]
+                  ]
+                }
+              },
+              "MethodResponses": []
+            },
+            "DependsOn": [
+              "GetSimilarPhotosLambdaPermissionApiGateway"
+            ]
+          },
+          "ApiGatewayDeployment1748792774097": {
             "Type": "AWS::ApiGateway::Deployment",
             "Properties": {
               "RestApiId": {
@@ -430,8 +604,10 @@
             "DependsOn": [
               "ApiGatewayMethodFiltersOptions",
               "ApiGatewayMethodPhotosOptions",
+              "ApiGatewayMethodSimilarOptions",
               "ApiGatewayMethodFiltersGet",
-              "ApiGatewayMethodPhotosGet"
+              "ApiGatewayMethodPhotosGet",
+              "ApiGatewayMethodSimilarGet"
             ]
           },
           "GetFiltersLambdaPermissionApiGateway": {
@@ -507,6 +683,43 @@
                 ]
               }
             }
+          },
+          "GetSimilarPhotosLambdaPermissionApiGateway": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+              "FunctionName": {
+                "Fn::GetAtt": [
+                  "GetSimilarPhotosLambdaFunction",
+                  "Arn"
+                ]
+              },
+              "Action": "lambda:InvokeFunction",
+              "Principal": "apigateway.amazonaws.com",
+              "SourceArn": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":execute-api:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":",
+                    {
+                      "Ref": "ApiGatewayRestApi"
+                    },
+                    "/*/*"
+                  ]
+                ]
+              }
+            }
           }
         },
         "Outputs": {
@@ -519,7 +732,7 @@
           "GetFiltersLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "GetFiltersLambdaVersionuUTUUKsQ8KcYJAoopbtMh5jc63TYp8xQ3FFSFaJk"
+              "Ref": "GetFiltersLambdaVersionsqVNHO7hSMGmocoFtkJxWu3MXAs3ak8Bke3CO2mON0"
             },
             "Export": {
               "Name": "sls-photo-viewer-api-dev-GetFiltersLambdaFunctionQualifiedArn"
@@ -528,10 +741,19 @@
           "GetPhotosLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "GetPhotosLambdaVersionYqrG2tf2vdLfycNWrguxyjAOVeHJqIK41C05k8D2tZc"
+              "Ref": "GetPhotosLambdaVersion0hLmozO8GI5WX5DJHZMvWSf2XFZgf5mmkMzqBOVfC4I"
             },
             "Export": {
               "Name": "sls-photo-viewer-api-dev-GetPhotosLambdaFunctionQualifiedArn"
+            }
+          },
+          "GetSimilarPhotosLambdaFunctionQualifiedArn": {
+            "Description": "Current Lambda function version",
+            "Value": {
+              "Ref": "GetSimilarPhotosLambdaVersionu2Wqobbt6hPerlkYUqkZk7jZ2l52GIszWAJ6iN0"
+            },
+            "Export": {
+              "Name": "sls-photo-viewer-api-dev-GetSimilarPhotosLambdaFunctionQualifiedArn"
             }
           },
           "ServiceEndpoint": {
@@ -603,7 +825,7 @@
         "timeout": 6,
         "runtime": "nodejs18.x",
         "vpc": {},
-        "versionLogicalId": "GetFiltersLambdaVersionuUTUUKsQ8KcYJAoopbtMh5jc63TYp8xQ3FFSFaJk"
+        "versionLogicalId": "GetFiltersLambdaVersionsqVNHO7hSMGmocoFtkJxWu3MXAs3ak8Bke3CO2mON0"
       },
       "getPhotos": {
         "handler": "handlers/getPhotos.handler",
@@ -639,7 +861,44 @@
         "timeout": 6,
         "runtime": "nodejs18.x",
         "vpc": {},
-        "versionLogicalId": "GetPhotosLambdaVersionYqrG2tf2vdLfycNWrguxyjAOVeHJqIK41C05k8D2tZc"
+        "versionLogicalId": "GetPhotosLambdaVersion0hLmozO8GI5WX5DJHZMvWSf2XFZgf5mmkMzqBOVfC4I"
+      },
+      "getSimilarPhotos": {
+        "handler": "handlers/getSimilarPhotos.handler",
+        "timeout": 30,
+        "memorySize": 1024,
+        "events": [
+          {
+            "http": {
+              "path": "similar",
+              "method": "get",
+              "cors": {
+                "origin": "*",
+                "methods": [
+                  "OPTIONS",
+                  "GET"
+                ],
+                "headers": [
+                  "Content-Type",
+                  "X-Amz-Date",
+                  "Authorization",
+                  "X-Api-Key",
+                  "X-Amz-Security-Token",
+                  "X-Amz-User-Agent",
+                  "X-Amzn-Trace-Id"
+                ],
+                "allowCredentials": false
+              },
+              "integration": "AWS_PROXY"
+            }
+          }
+        ],
+        "name": "photo-viewer-api-dev-getSimilarPhotos",
+        "package": {},
+        "memory": 1024,
+        "runtime": "nodejs18.x",
+        "vpc": {},
+        "versionLogicalId": "GetSimilarPhotosLambdaVersionu2Wqobbt6hPerlkYUqkZk7jZ2l52GIszWAJ6iN0"
       }
     },
     "configValidationMode": "warn",
@@ -662,7 +921,7 @@
     "artifact": "C:\\Users\\sdodman-local\\Desktop\\PhotoViewer\\photo-viewer-api\\.serverless\\photo-viewer-api.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/photo-viewer-api/dev/1746527734738-2025-05-06T10:35:34.738Z",
+    "artifactDirectoryName": "serverless/photo-viewer-api/dev/1748792788357-2025-06-01T15:46:28.357Z",
     "artifact": "photo-viewer-api.zip"
   }
 }

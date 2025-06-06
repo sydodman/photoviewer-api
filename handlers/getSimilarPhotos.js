@@ -152,8 +152,9 @@ exports.handler = async (event) => {
       };
       
       const scanResponse = await ddb.send(new ScanCommand(scanParams));
+      const queryPhotoId = keyToId(photoId); // Get the numeric ID of the query photo
       searchResults = scanResponse.Items.map(item => ({
-        id: pointId !== keyToId(item.Key) ? keyToId(item.Key) : pointId + 1, // Ensure we don't match the query image
+        id: queryPhotoId !== keyToId(item.Key) ? keyToId(item.Key) : queryPhotoId + 1, // Ensure we don't match the query image
         score: Math.random() * 0.5 + 0.5, // Random score between 0.5 and 1.0
         payload: item
       }));
